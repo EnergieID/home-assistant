@@ -527,6 +527,35 @@ async def test_synchronize_sensors_error_handling(
     assert mock_config_entry.state is ConfigEntryState.LOADED
 
 
+@pytest.mark.parametrize(
+    "error",
+    [
+        pytest.param(
+            ClientResponseError(request_info=MagicMock(), history=(), status=500),
+            id="http_error",
+        ),
+        pytest.param(ClientError("Server disconnected"), id="client_error"),
+    ],
+)
+async def test_periodic_sync_http_error(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_webhook_client: MagicMock,
+    caplog: pytest.LogCaptureFixture,
+    error: Exception,
+) -> None:
+    """Test an HTTP error while uploading marks EnergyID unavailable."""
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+    mock_webhook_client.synchronize_sensors.side_effect = error
+
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=61))
+    await hass.async_block_till_done()
+
+    assert mock_config_entry.runtime_data.unavailable_logged
+    assert "Error doing job" not in caplog.text
+
+
 async def test_setup_timeout_during_authentication(hass: HomeAssistant) -> None:
     """Test ConfigEntryNotReady raised on TimeoutError during authentication."""
     entry = MockConfigEntry(
